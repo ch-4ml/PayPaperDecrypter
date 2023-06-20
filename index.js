@@ -1,101 +1,96 @@
-var express = require('express')
-var path = require('path')
+var express = require('express');
+var path = require('path');
 var fileUpload = require('express-fileupload');
 
-var fs = require('fs')
-var jQuery = require("jquery")
-var jsdom = require("jsdom")
+var fs = require('fs');
+var jQuery = require('jquery');
+var jsdom = require('jsdom');
 
-var crypto = require('crypto')
-var Iconv = require('iconv').Iconv
+var crypto = require('crypto');
+var Iconv = require('iconv').Iconv;
 
-var app = express()
+var app = express();
 
 app.use(fileUpload());
 
 app.get('/', function (req, res) {
-    res.sendFile(path.join(__dirname + "/index.html"))
-})
+  res.sendFile(path.join(__dirname + '/index.html'));
+});
 
 app.post('/decrypt', function (req, res) {
+  if (!req.files.paper) {
+    res.send('No file specified.');
+    return;
+  }
+  if (!req.body.password) {
+    res.send('No password specified.');
+    return;
+  }
 
-    if (!req.files.paper) {
-        res.send("No file specified.")
-        return;
-    }
-    if (!req.body.password) {
-        res.send("No password specified.")
-        return;
-    }
+  jsdom.env(
+    req.files.paper.data.toString(),
 
-    jsdom.env(
-        req.files.paper.data.toString(),
+    function (err, window) {
+      var $ = jQuery(window);
 
-        function (err, window) {
+      var encrypted = $("input[name*='_viewData']").attr('value');
 
-            var $ = jQuery(window)
+      try {
+        var decrypted = decryptPayPaper(req.body.password, encrypted);
 
-            var encrypted = $("input[name*='_viewData']").attr("value")
+        // hack: force replace 'EUC-KR' => 'UTF-8'
+        decrypted = decrypted.replace('EUC-KR', 'UTF-8');
 
-            try {
-                var decrypted = decryptPayPaper(req.body.password, encrypted)
+        // send response
+        res.send(decrypted);
+      } catch (e) {
+        // console.log(e.message)
+        res.send(e.message);
+      }
+    },
+  );
+});
 
-                // hack: force replace 'EUC-KR' => 'UTF-8'
-                decrypted = decrypted.replace('EUC-KR', 'UTF-8')
+app.listen(process.env.PORT || 3000);
 
-                // send response
-                res.send(decrypted) 
-            }
-            catch(e) {
-                // console.log(e.message)
-                res.send(e.message)
-            }
-        }
-    )
-})
- 
-app.listen(process.env.PORT || 3000)
+function decryptPayPaper(password, encrypted) {
+  // read blob from base64 encoded string
+  var blob = Buffer.from(encrypted, 'base64');
 
-function decryptPayPaper (password, encrypted) {
+  // find Initialization Vector, Salt, Content from Encrypted blob
+  // ref : http://www.jensign.com/JavaScience/dotnet/DeriveBytes/
+  var IV = blob.subarray(56 + 2, 56 + 2 + 8);
+  var salt = blob.subarray(66 + 2, 66 + 2 + 16);
 
-    // read blob from base64 encoded string
-    var blob = Buffer.from(encrypted, 'base64')
+  var content = blob.subarray(84 + 4, blob.length);
 
-    // find Initialization Vector, Salt, Content from Encrypted blob
-    // ref : http://www.jensign.com/JavaScience/dotnet/DeriveBytes/
-    var IV = blob.slice(56 + 2, 56 + 2 + 8)
-    var salt = blob.slice(66 + 2, 66 + 2 + 16)
+  // convert password into UNICODE string
+  var iconv = new Iconv('utf-8', 'UTF-16LE');
+  password = Buffer.from(password);
+  password = iconv.convert(password);
 
-    var content = blob.slice(84 + 4, blob.length)
+  var key = hashSaltPassword(salt, password);
 
-    // convert password into UNICODE string
-    var iconv = new Iconv('utf-8', 'UTF-16LE')
-    password = Buffer.from(password)
-    password = iconv.convert(password)
+  // decrypt
+  var decipher = crypto.createDecipheriv('rc2-cbc', key, IV);
+  var decrypted1 = decipher.update(content);
+  var decrypted2 = decipher.final();
 
-    var key = hashSaltPassword(salt, password)
+  var decrypted = Buffer.concat([decrypted1, decrypted2]);
 
-    // decrypt
-    var decipher = crypto.createDecipheriv('rc2-cbc', key, IV)
-    var decrypted1 = decipher.update(content)
-    var decrypted2 = decipher.final()
+  // convert 'decrypted' to utf8 string, from utf-16 Little Endian
+  var iconv = new Iconv('UTF-16LE', 'utf-8');
+  var decryptedUtf8 = iconv.convert(decrypted).toString();
 
-    var decrypted = Buffer.concat([decrypted1, decrypted2])
-
-    // convert 'decrypted' to utf8 string, from utf-16 Little Endian
-    var iconv = new Iconv('UTF-16LE', 'utf-8')
-    var decryptedUtf8 = iconv.convert(decrypted).toString()
-
-    return decryptedUtf8
+  return decryptedUtf8;
 }
 
-function hashSaltPassword (salt, password) {
+function hashSaltPassword(salt, password) {
+  const hash = crypto.createHash('SHA1');
 
-    const hash = crypto.createHash("SHA1")
+  hash.update(password);
+  hash.update(salt);
 
-    hash.update(password)
-    hash.update(salt)
-
-    var saltedKey = hash.digest().slice(0, 16)
-    return saltedKey
+  var saltedKey = hash.digest().subarray(0, 16);
+  return saltedKey;
 }
