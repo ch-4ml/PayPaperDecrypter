@@ -55,7 +55,7 @@ app.post('/decrypt', (req, res) => {
   );
 });
 
-app.listen(process.env.PORT || 4444, () => {
+app.listen(process.env.PORT || 8282, () => {
   process.send('ready')
   console.log(`application is listening on port: ${process.env.PORT}...`)
 });
