@@ -17,7 +17,6 @@ app.use((req, res, next) => {
   next();
 })
 app.use(fileUpload());
-
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname + '/index.html'));
 });
@@ -41,7 +40,7 @@ app.post('/decrypt', (req, res) => {
       const encrypted = $("input[name*='_viewData']").attr('value');
 
       try {
-        const decrypted = decryptPayPaper(req.body.password, encrypted);
+        let decrypted = decryptPayPaper(req.body.password, encrypted);
 
         // hack: force replace 'EUC-KR' => 'UTF-8'
         decrypted = decrypted.replace('EUC-KR', 'UTF-8');
