@@ -4,7 +4,7 @@
   "description": "paypaper decrypter",
   "main": "index.js",
   "scripts": {
-    "start": "./pre-processing.sh && node index.js",
+    "start": "./pre-processing.sh && pm2 start ecosystem.config.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Chanwoo Jeong",

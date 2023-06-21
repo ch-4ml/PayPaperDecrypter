@@ -1,23 +1,28 @@
-var express = require('express');
-var path = require('path');
-var fileUpload = require('express-fileupload');
+const express = require('express');
+const path = require('path');
+const fileUpload = require('express-fileupload');
 
-var fs = require('fs');
-var jQuery = require('jquery');
-var jsdom = require('jsdom');
+const fs = require('fs');
+const jQuery = require('jquery');
+const jsdom = require('jsdom');
 
-var crypto = require('crypto');
-var Iconv = require('iconv').Iconv;
+const crypto = require('crypto');
+const Iconv = require('iconv').Iconv;
 
-var app = express();
+const app = express();
 
+let isDisableKeepAlive = false
+app.use((req, res, next) => {
+  if (isDisableKeepAlive) res.set('Connection', 'close');
+  next();
+})
 app.use(fileUpload());
 
-app.get('/', function (req, res) {
+app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname + '/index.html'));
 });
 
-app.post('/decrypt', function (req, res) {
+app.post('/decrypt', (req, res) => {
   if (!req.files.paper) {
     res.send('No file specified.');
     return;
@@ -31,12 +36,12 @@ app.post('/decrypt', function (req, res) {
     req.files.paper.data.toString(),
 
     function (err, window) {
-      var $ = jQuery(window);
+      const $ = jQuery(window);
 
-      var encrypted = $("input[name*='_viewData']").attr('value');
+      const encrypted = $("input[name*='_viewData']").attr('value');
 
       try {
-        var decrypted = decryptPayPaper(req.body.password, encrypted);
+        const decrypted = decryptPayPaper(req.body.password, encrypted);
 
         // hack: force replace 'EUC-KR' => 'UTF-8'
         decrypted = decrypted.replace('EUC-KR', 'UTF-8');
@@ -51,7 +56,18 @@ app.post('/decrypt', function (req, res) {
   );
 });
 
-app.listen(process.env.PORT || 3000);
+app.listen(process.env.PORT || 4444, () => {
+  process.send('ready')
+  console.log(`application is listening on port: ${process.env.PORT}...`)
+});
+
+process.on('SIGINT', () => {
+  isDisableKeepAlive = true
+  app.close(() => {
+    console.log('server closed')
+    process.exit(0)
+  })
+})
 
 function decryptPayPaper(password, encrypted) {
   // read blob from base64 encoded string
